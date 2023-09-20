@@ -19,6 +19,7 @@ const client = new Client({
 client.login(CONFIG.token);
 // Commands
 client.commands = new Collection();
+globalThis.askCounter = 0;
 
 const commandsPath = path.join(__dirname, "commands");
 const commandFiles = fs

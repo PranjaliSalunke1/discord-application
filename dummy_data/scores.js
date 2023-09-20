@@ -47,6 +47,13 @@ const scores = [
     late_streak: 0,
     punctuality_streak: 2,
   },
+  {
+    name: "Pranjali",
+    userId: "user0871",
+    score: 8,
+    late_streak: 0,
+    punctuality_streak: 2,
+  },
 ];
 
 module.exports = { scores };
