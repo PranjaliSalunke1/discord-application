@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
-const Canvas = require("canvas");
+//const Canvas = require("canvas");
+require("../myBot/actions/mongodb");
 const {
   Client,
   Collection,
@@ -14,6 +15,8 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildMembers,
+    "GuildMembers",
   ],
 });
 client.login(CONFIG.token);

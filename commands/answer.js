@@ -1,5 +1,18 @@
-const { SlashCommandBuilder } = require("discord.js");
-const fs = require("fs");
+const {
+  SlashCommandBuilder,
+  ReactionEmoji,
+  PermissionsBitField,
+} = require("discord.js");
+
+const { client, MongoClient } = require("mongodb");
+//const { connectToMongoDB } = require("../actions/mongodb");
+// const { addPoints } = require("../rewards/addPoint");
+// const { updateLeaderboard } = require("../actions/leaderboard");
+const QuestionModel = require("../schema/questionSchema");
+const { updateScores } = require("../rewards/updateScore");
+const questionSchema = require("../schema/questionSchema");
+const introDataSchema = require("../schema/introDataSchema");
+const { channel } = require("diagnostics_channel");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -22,63 +35,131 @@ module.exports = {
     try {
       const answers = interaction.options.getString("ans");
       const AnsSender = interaction.user.username;
+      const AnsSenderId = interaction.user.id;
+
       const questionId = interaction.options.getString("uid");
+      const channelName = interaction.channel;
+      // console.log("channelName", channelName);
 
-      const jsonFilePath = "challange.json";
+      //await connectToMongoDB();
 
-      let jsonData = [];
-      if (fs.existsSync(jsonFilePath)) {
-        try {
-          const rawData = fs.readFileSync(jsonFilePath, "utf8");
-          jsonData = JSON.parse(rawData);
-        } catch (error) {
-          console.error("Error reading JSON file:", error);
-        }
-      }
+      const guildMembers = await interaction.guild.members.fetch({
+        withPresences: true,
+      });
 
-      const questionIndex = jsonData.findIndex(
-        (item) => item.uniqueID === questionId
+      //  console.log(`Total Members: ${guildMembers.size}`);
+
+      const membersWithPermission = guildMembers.filter((member) =>
+        channelName
+          .permissionsFor(member)
+          .has(PermissionsBitField.Flags.SendMessages)
       );
+      const withPermission = membersWithPermission.size;
+      //  console.log(`Members with permission: ${membersWithPermission.size}`);
+      // console.log(
+      //   `Bots in the server: ${
+      //     membersWithPermission.filter((member) => member.user.bot).size
+      //   }`
+      // );
 
-      if (questionIndex === -1) {
-        await interaction.reply("Question not found.");
+      const bots = membersWithPermission.filter(
+        (member) => member.user.bot
+      ).size;
+      console.log("bots in the channel", bots);
+      const nonbotmembers = membersWithPermission.filter(
+        (member) => !member.user.bot
+      ).size;
+
+      console.log("nonbotmembers", nonbotmembers);
+
+      console.log("members", channelName.members.size);
+      // console.log(
+      //   `Real members in the server: ${
+      //     membersWithPermission.filter((member) => !member.user.bot).size
+      //   }`
+      // );
+
+      // membersWithPermission.forEach((member) => {
+      //   console.log(
+      //     `${member.user.username} (${
+      //       member.user.bot ? "Bot" : "User"
+      //     }) can send messages`
+      //   );
+      // });
+      let questionDocument = await QuestionModel.findOne({
+        uniqueID: questionId,
+      });
+      if (!questionDocument) {
+        interaction.reply(`question id ${questionId} not found`);
+        return;
+      }
+      const isQuestionSender = questionDocument.QuestSender === AnsSender;
+      if (isQuestionSender) {
+        interaction.reply(`Sorry... You can not answer your own question `);
         return;
       }
 
-      const questionData = jsonData[questionIndex];
-
-      questionData.answers = questionData.answers || [];
-      questionData.answers.push({
-        answer: answers,
-        answerSender: AnsSender,
-        score: 0,
-      });
-
-      try {
-        fs.writeFileSync(
-          jsonFilePath,
-          JSON.stringify(jsonData, null, 2),
-          "utf8"
-        );
-        console.log("JSON file updated successfully.");
-      } catch (error) {
-        console.error("Error writing to JSON file:", error);
+      if (!questionDocument.submittedUsers.includes(AnsSender)) {
+        questionDocument.submittedUsers.push(AnsSender);
       }
 
+      questionDocument.answers.push({
+        answer: answers,
+        userId: AnsSenderId,
+        answerSender: AnsSender,
+        score: isQuestionSender ? 10 : 0,
+      });
+
+      await questionDocument.save();
+
+      // const userRole = await introDataSchema.find({ role: channelName });
+
+      // console.log(
+      //   "userRole",
+      //   (await userRole).length,
+      //   "channelName",
+      //   channelName
+      // );
+      const submittedUsers = questionDocument.submittedUsers.length;
+      console.log("submittedUsers", submittedUsers);
+      const memberInChannel = channelName.members.size;
+      console.log(
+        "tottal mmebers present in the channel",
+        memberInChannel - bots
+      );
+      if (memberInChannel - bots === submittedUsers) {
+        console.log(
+          `everyone has answered the question ${questionDocument.uniqueID}`
+        );
+        const questionSenderAnswer = questionDocument.answers.find(
+          (answer) => answer.answerSender === questionDocument.QuestSender
+        );
+
+        if (questionSenderAnswer) {
+          console.log(
+            `Question sender ${questionDocument.QuestSender} received 10 points.`
+          );
+          console.log("initial score=", questionSenderAnswer.score);
+          questionSenderAnswer.score += 10;
+          updateScores();
+          await questionDocument.save();
+        }
+      }
       interaction.channel
         .send(
-          `${answers}\nThanks for submitting your answer ${AnsSender} \n⭐ -> 10  👍 -> 5  👎 -> 0`
+          `${answers}\nThanks for submitting your answer ${AnsSender}  \n⭐ -> 10  👍 -> 5  👎 -> 0`
         )
         .then((message) => {
           message.react("⭐");
           message.react("👍");
           message.react("👎");
 
-          const collectorFilter = (user) => !user.bot;
-
+          const collectorFilter = (reaction, user) =>
+            !user.bot && user.id === interaction.user.id;
+          console.log(interaction.user.id);
           const collectorOptions = {
             time: null,
-            max: 4,
+            max: 1,
           };
 
           const scoreMapping = {
@@ -92,46 +173,23 @@ module.exports = {
             ...collectorOptions,
           });
 
-          collector.on("collect", (reaction, user) => {
-            if (user.bot) {
+          collector.on("collect", async (reaction, user) => {
+            if (user.bot || !isQuestionSender) {
               return;
             }
-
-            const score = scoreMapping[reaction.emoji.name] || 0;
-
-            if (score === 0) {
-              return;
-            }
-
-            const questionData = jsonData[questionIndex];
-            const answerSender = questionData.answers.find(
-              (ans) => ans.answerSender === user.tag
+            const answerSender = questionDocument.answers.find(
+              (answer) => answer.answerSender === AnsSender
             );
-
+            //  await questionDocument.save();
             if (answerSender) {
-              console.log(
-                `Score updated for ${user.tag}: ${answerSender.score} + ${score}`
-              );
-              answerSender.score += score;
-            } else {
-              console.log(
-                `New score entry created for ${user.tag} with score ${score}`
-              );
-              questionData.answers.push({
-                answerSender: user.tag,
-                score: score,
-              });
-            }
+              const reactionScore = scoreMapping[reaction.emoji.name] || 0;
+              answerSender.score += reactionScore;
 
-            try {
-              fs.writeFileSync(
-                jsonFilePath,
-                JSON.stringify(jsonData, null, 2),
-                "utf8"
+              console.log(
+                `User ${userAnswer.answerSender} has updated with ${reactionScore}`
               );
-              console.log("JSON file updated successfully.");
-            } catch (error) {
-              console.error("Error writing to JSON file:", error);
+              updateScores();
+              await questionDocument.save();
             }
           });
         });

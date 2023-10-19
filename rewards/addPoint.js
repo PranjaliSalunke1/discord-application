@@ -1,3 +1,4 @@
+const { updateLeaderboard } = require("../actions/leaderboard");
 const { scores } = require("../dummy_data/scores");
 
 async function addPoints(score) {
@@ -14,7 +15,7 @@ async function addPoints(score) {
     return _sc;
   });
 
-  return "SUCCESS";
+  return updateLeaderboard;
 }
 
 module.exports = { addPoints };

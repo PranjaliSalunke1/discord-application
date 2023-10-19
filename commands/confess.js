@@ -2,8 +2,7 @@ const {
   ActionRowBuilder,
   SlashCommandBuilder,
   EmbedBuilder,
-  Events,
-  ModalBuilder,
+  PermissionsBitField,
   ButtonBuilder,
   ButtonStyle,
 } = require("discord.js");
@@ -44,9 +43,42 @@ module.exports = {
       .setDescription(confess)
       .setTimestamp();
 
-    // interaction.reply({ content: "posting", ephemeral: true });
+    //interaction.reply({ content: "posting", ephemeral: true });
     const hrChannel = interaction.guild.channels.cache.get(CONFIG.HR_CHANNEL);
+
     interaction.reply({ content: "Confession Submitted", ephemeral: true });
+    // const guildMembers = await interaction.guild.members.fetch({
+    //   withPresences: true,
+    // });
+
+    // console.log(`Total Members: ${guildMembers.size}`);
+
+    // const membersWithPermission = guildMembers.filter((member) =>
+    //   hrChannel
+    //     .permissionsFor(member)
+    //     .has(PermissionsBitField.Flags.SendMessages)
+    // );
+
+    // console.log(`Members with permission: ${membersWithPermission.size}`);
+    // console.log(
+    //   `Bots in the server: ${
+    //     membersWithPermission.filter((member) => member.user.bot).size
+    //   }`
+    // );
+    // console.log(
+    //   `Real members in the server: ${
+    //     membersWithPermission.filter((member) => !member.user.bot).size
+    //   }`
+    // );
+
+    // membersWithPermission.forEach((member) => {
+    //   console.log(
+    //     `${member.user.username} (${
+    //       member.user.bot ? "Bot" : "User"
+    //     }) can send messages`
+    //   );
+    // });
+
     const response = await hrChannel.send({
       embeds: [moderationEmbed],
       components: [row],
@@ -82,7 +114,7 @@ module.exports = {
         // await i.deferUpdate();
         // await wait(4000);
         await i.reply({
-          content: "Your confession was not approved",
+          content: "Your confession has been rejected",
           embeds: [confessionEmbed],
           ephemeral: true,
         });
