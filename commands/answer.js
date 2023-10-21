@@ -5,14 +5,12 @@ const {
 } = require("discord.js");
 
 const { client, MongoClient } = require("mongodb");
-//const { connectToMongoDB } = require("../actions/mongodb");
-// const { addPoints } = require("../rewards/addPoint");
-// const { updateLeaderboard } = require("../actions/leaderboard");
+
 const QuestionModel = require("../schema/questionSchema");
 const { updateScores } = require("../rewards/updateScore");
 const questionSchema = require("../schema/questionSchema");
 const introDataSchema = require("../schema/introDataSchema");
-const { channel } = require("diagnostics_channel");
+const scoreModel = require("../schema/scoreSchema");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -38,112 +36,83 @@ module.exports = {
       const AnsSenderId = interaction.user.id;
 
       const questionId = interaction.options.getString("uid");
-      const channelName = interaction.channel;
-      // console.log("channelName", channelName);
-
-      //await connectToMongoDB();
+      const channel = interaction.channel;
+      // console.log("channelName", channel);
 
       const guildMembers = await interaction.guild.members.fetch({
         withPresences: true,
       });
-
-      //  console.log(`Total Members: ${guildMembers.size}`);
-
       const membersWithPermission = guildMembers.filter((member) =>
-        channelName
+        channel
           .permissionsFor(member)
           .has(PermissionsBitField.Flags.SendMessages)
       );
       const withPermission = membersWithPermission.size;
-      //  console.log(`Members with permission: ${membersWithPermission.size}`);
-      // console.log(
-      //   `Bots in the server: ${
-      //     membersWithPermission.filter((member) => member.user.bot).size
-      //   }`
-      // );
 
       const bots = membersWithPermission.filter(
         (member) => member.user.bot
       ).size;
-      console.log("bots in the channel", bots);
-      const nonbotmembers = membersWithPermission.filter(
-        (member) => !member.user.bot
-      ).size;
+      console.log("bots", bots);
 
-      console.log("nonbotmembers", nonbotmembers);
+      const memberInChannel = channel.members.size;
 
-      console.log("members", channelName.members.size);
-      // console.log(
-      //   `Real members in the server: ${
-      //     membersWithPermission.filter((member) => !member.user.bot).size
-      //   }`
-      // );
+      console.log("member in chanel", memberInChannel);
 
-      // membersWithPermission.forEach((member) => {
-      //   console.log(
-      //     `${member.user.username} (${
-      //       member.user.bot ? "Bot" : "User"
-      //     }) can send messages`
-      //   );
-      // });
+      const channelMember = memberInChannel - bots;
+      // console.log(channelMember);
       let questionDocument = await QuestionModel.findOne({
         uniqueID: questionId,
       });
+
+      //console.log("here is the questionSchema", questionDocument.score);
       if (!questionDocument) {
         interaction.reply(`question id ${questionId} not found`);
-        return;
-      }
-      const isQuestionSender = questionDocument.QuestSender === AnsSender;
-      if (isQuestionSender) {
-        interaction.reply(`Sorry... You can not answer your own question `);
         return;
       }
 
       if (!questionDocument.submittedUsers.includes(AnsSender)) {
         questionDocument.submittedUsers.push(AnsSender);
       }
-
+      console.log("Question Sender:", questionDocument.QuestSender);
+      console.log("Answer Sender:", AnsSender);
+      if (questionDocument.QuestSender === AnsSender) {
+        interaction.reply(
+          `Sorry you cannot answer your own question ${questionDocument.QuestSender}`
+        );
+        return;
+      }
       questionDocument.answers.push({
         answer: answers,
         userId: AnsSenderId,
         answerSender: AnsSender,
-        score: isQuestionSender ? 10 : 0,
+        score: 0,
       });
 
       await questionDocument.save();
 
-      // const userRole = await introDataSchema.find({ role: channelName });
-
-      // console.log(
-      //   "userRole",
-      //   (await userRole).length,
-      //   "channelName",
-      //   channelName
-      // );
       const submittedUsers = questionDocument.submittedUsers.length;
-      console.log("submittedUsers", submittedUsers);
-      const memberInChannel = channelName.members.size;
       console.log(
-        "tottal mmebers present in the channel",
-        memberInChannel - bots
+        "submittedUsers",
+        submittedUsers,
+        "channel member",
+        channelMember
       );
-      if (memberInChannel - bots === submittedUsers) {
+      if (channelMember - 1 === submittedUsers) {
         console.log(
           `everyone has answered the question ${questionDocument.uniqueID}`
         );
-        const questionSenderAnswer = questionDocument.answers.find(
-          (answer) => answer.answerSender === questionDocument.QuestSender
+
+        console.log(
+          `Question sender ${questionDocument.QuestSender} received 10 points.`
         );
 
-        if (questionSenderAnswer) {
-          console.log(
-            `Question sender ${questionDocument.QuestSender} received 10 points.`
-          );
-          console.log("initial score=", questionSenderAnswer.score);
-          questionSenderAnswer.score += 10;
-          updateScores();
-          await questionDocument.save();
-        }
+        console.log("initial score=", questionDocument.score);
+
+        questionDocument.score += 10;
+
+        updateScores();
+        await questionDocument.save();
+        // }
       }
       interaction.channel
         .send(
@@ -154,8 +123,7 @@ module.exports = {
           message.react("👍");
           message.react("👎");
 
-          const collectorFilter = (reaction, user) =>
-            !user.bot && user.id === interaction.user.id;
+          const collectorFilter = (reaction, user) => !user.bot;
           console.log(interaction.user.id);
           const collectorOptions = {
             time: null,
@@ -174,17 +142,17 @@ module.exports = {
           });
 
           collector.on("collect", async (reaction, user) => {
-            if (user.bot || !isQuestionSender) {
+            if (user.bot) {
               return;
             }
-            const answerSender = questionDocument.answers.find(
+
+            await questionDocument.save();
+            const reactionScore = scoreMapping[reaction.emoji.name] || 0;
+            const userAnswer = questionDocument.answers.find(
               (answer) => answer.answerSender === AnsSender
             );
-            //  await questionDocument.save();
-            if (answerSender) {
-              const reactionScore = scoreMapping[reaction.emoji.name] || 0;
-              answerSender.score += reactionScore;
-
+            if (userAnswer) {
+              userAnswer.score += reactionScore;
               console.log(
                 `User ${userAnswer.answerSender} has updated with ${reactionScore}`
               );

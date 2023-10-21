@@ -30,7 +30,16 @@ async function updateScores() {
         }
       }
 
+      const allQuestionAnswers = await QuestionModel.find({
+        QuestSender: username,
+      });
+
+      for (const questionAnswer of allQuestionAnswers) {
+        scores += questionAnswer.score || 0;
+      }
+
       user.scores = scores;
+
       await user.save();
     }
 
